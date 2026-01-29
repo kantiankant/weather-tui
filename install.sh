@@ -11,6 +11,6 @@ echo "<insert message that tells you that the package is compiling or something>
 cargo build --release
 
 echo "Installing binary..."
-sudo install -m 755 target/release/weather-searcher /usr/local/bin/weather-searcher
+sudo install -m 755 target/release/weather-searcher /usr/local/bin/weather-tui
 
-echo "Done. Now enter weather-searcher in your terminal of choice to run it."
+echo "Done. Now enter weather-tui in your terminal of choice to run it."

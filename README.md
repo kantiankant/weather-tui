@@ -2,4 +2,4 @@ So you've been directed here. Nice. This is my (poorly written) weather TUI that
 
 To install: clone the repository, cd into it, and run ./install.sh and you're done.
 
-Known limitations: I dunno.
+Known limitations: I dunno. Probably something niceh. READ THE DAMN SOURCE CODE, MATE.
