@@ -1,4 +1,3 @@
-
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
@@ -87,7 +86,7 @@ struct HistoryEntry {
 
 struct App {
     input: String,
-    cursor_position: usize,
+    cursor_position: usize,  // This is now a CHARACTER position, not byte position
     state: AppState,
     mode: Mode,
     weather_data: Option<WeatherData>,
@@ -121,6 +120,20 @@ impl App {
         }
     }
 
+    // Helper: convert character position to byte position
+    fn char_to_byte_pos(&self, char_pos: usize) -> usize {
+        self.input
+            .char_indices()
+            .nth(char_pos)
+            .map(|(byte_pos, _)| byte_pos)
+            .unwrap_or(self.input.len())
+    }
+
+    // Helper: get character count
+    fn char_count(&self) -> usize {
+        self.input.chars().count()
+    }
+
     fn move_cursor_left(&mut self) {
         if self.cursor_position > 0 {
             self.cursor_position -= 1;
@@ -128,7 +141,7 @@ impl App {
     }
 
     fn move_cursor_right(&mut self) {
-        if self.cursor_position < self.input.len() {
+        if self.cursor_position < self.char_count() {
             self.cursor_position += 1;
         }
     }
@@ -138,38 +151,45 @@ impl App {
     }
 
     fn move_cursor_end(&mut self) {
-        self.cursor_position = self.input.len();
+        self.cursor_position = self.char_count();
     }
 
     fn delete_char(&mut self) {
-        if self.cursor_position < self.input.len() {
-            self.input.remove(self.cursor_position);
+        let char_count = self.char_count();
+        if self.cursor_position < char_count {
+            let byte_pos = self.char_to_byte_pos(self.cursor_position);
+            self.input.remove(byte_pos);
         }
     }
 
     fn backspace(&mut self) {
         if self.cursor_position > 0 {
             self.cursor_position -= 1;
-            self.input.remove(self.cursor_position);
+            let byte_pos = self.char_to_byte_pos(self.cursor_position);
+            self.input.remove(byte_pos);
         }
     }
 
     fn insert_char(&mut self, c: char) {
-        self.input.insert(self.cursor_position, c);
+        let byte_pos = self.char_to_byte_pos(self.cursor_position);
+        self.input.insert(byte_pos, c);
         self.cursor_position += 1;
     }
 
     fn move_to_next_word(&mut self) {
-        let after_cursor = &self.input[self.cursor_position..];
-        if let Some(pos) = after_cursor.find(|c: char| c.is_whitespace()) {
-            self.cursor_position += pos + 1;
-            while self.cursor_position < self.input.len() 
-                && self.input.chars().nth(self.cursor_position).unwrap().is_whitespace() {
-                self.cursor_position += 1;
-            }
-        } else {
-            self.cursor_position = self.input.len();
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut pos = self.cursor_position;
+        
+        // Skip current word
+        while pos < chars.len() && !chars[pos].is_whitespace() {
+            pos += 1;
         }
+        // Skip whitespace
+        while pos < chars.len() && chars[pos].is_whitespace() {
+            pos += 1;
+        }
+        
+        self.cursor_position = pos;
     }
 
     fn move_to_prev_word(&mut self) {
@@ -177,19 +197,19 @@ impl App {
             return;
         }
         
-        self.cursor_position -= 1;
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut pos = self.cursor_position.saturating_sub(1);
         
-        while self.cursor_position > 0 
-            && self.input.chars().nth(self.cursor_position).unwrap().is_whitespace() {
-            self.cursor_position -= 1;
+        // Skip whitespace
+        while pos > 0 && chars[pos].is_whitespace() {
+            pos -= 1;
+        }
+        // Skip to start of word
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
         }
         
-        let before_cursor = &self.input[..self.cursor_position];
-        if let Some(pos) = before_cursor.rfind(|c: char| c.is_whitespace()) {
-            self.cursor_position = pos + 1;
-        } else {
-            self.cursor_position = 0;
-        }
+        self.cursor_position = pos;
     }
 
     fn select_next_suggestion(&mut self) {
@@ -213,7 +233,7 @@ impl App {
         if self.show_autocomplete && !self.autocomplete_suggestions.is_empty() {
             let suggestion = &self.autocomplete_suggestions[self.selected_suggestion];
             self.input = format!("{}, {}", suggestion.name, suggestion.country);
-            self.cursor_position = self.input.len();
+            self.cursor_position = self.char_count();
             self.show_autocomplete = false;
             self.autocomplete_suggestions.clear();
         }
@@ -239,7 +259,7 @@ impl App {
     fn load_selected_history(&mut self) {
         if !self.search_history.is_empty() && self.selected_history_index < self.search_history.len() {
             self.input = self.search_history[self.selected_history_index].query.clone();
-            self.cursor_position = self.input.len();
+            self.cursor_position = self.char_count();
             self.focused_pane = FocusedPane::Search;
             self.mode = Mode::Insert;
         }
@@ -420,7 +440,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                 app.mode = Mode::Normal;
                                             }
                                             Err(e) => {
-                                                app.error_message = format!("Error: {}", e);
+                                                app.error_message = e;
                                                 app.state = AppState::Error;
                                             }
                                         }
@@ -503,7 +523,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                 app.mode = Mode::Normal;
                                             }
                                             Err(e) => {
-                                                app.error_message = format!("Error: {}", e);
+                                                app.error_message = e;
                                                 app.state = AppState::Error;
                                             }
                                         }
@@ -573,15 +593,20 @@ fn ui(f: &mut Frame, app: &App) {
 
     match app.state {
         AppState::Input => {
-            let input_display = if app.cursor_position <= app.input.len() {
-                let before = &app.input[..app.cursor_position];
-                let after = &app.input[app.cursor_position..];
+            // Build the display string with cursor
+            let chars: Vec<char> = app.input.chars().collect();
+            let char_count = chars.len();
+            
+            let input_display = if app.cursor_position <= char_count {
+                let before: String = chars.iter().take(app.cursor_position).collect();
+                let after: String = chars.iter().skip(app.cursor_position).collect();
+                
                 if app.mode == Mode::Insert {
                     format!("{}█{}", before, after)
                 } else {
-                    if app.cursor_position < app.input.len() {
-                        let cursor_char = app.input.chars().nth(app.cursor_position).unwrap();
-                        let after_cursor = &app.input[app.cursor_position + 1..];
+                    if app.cursor_position < char_count {
+                        let cursor_char = chars[app.cursor_position];
+                        let after_cursor: String = chars.iter().skip(app.cursor_position + 1).collect();
                         format!("{}[{}]{}", before, cursor_char, after_cursor)
                     } else {
                         format!("{}█", before)
@@ -790,27 +815,55 @@ fn ui(f: &mut Frame, app: &App) {
     f.render_widget(footer, chunks[2]);
 }
 
-async fn fetch_weather(city: &str) -> Result<WeatherData, Box<dyn Error>> {
+async fn fetch_weather(city: &str) -> Result<WeatherData, String> {
     let geocoding_url = format!(
         "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=en&format=json",
         urlencoding::encode(city)
     );
 
-    let geo_response = reqwest::get(&geocoding_url).await?;
-    let geo_data: GeocodingResponse = geo_response.json().await?;
+    let geo_response = reqwest::get(&geocoding_url)
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Connection timeout. Check your internet connection.".to_string()
+            } else if e.is_connect() {
+                "Cannot connect to weather service. Check your internet connection.".to_string()
+            } else {
+                format!("Network error: {}", e)
+            }
+        })?;
+
+    let geo_data: GeocodingResponse = geo_response
+        .json()
+        .await
+        .map_err(|_| "Failed to parse location data from weather service.".to_string())?;
 
     let location = geo_data
         .results
         .and_then(|mut r| r.pop())
-        .ok_or("City not found")?;
+        .ok_or_else(|| format!("'{}' not found. Try a different city name.", city))?;
 
     let weather_url = format!(
         "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,pressure_msl&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm&timezone=auto",
         location.latitude, location.longitude
     );
 
-    let weather_response = reqwest::get(&weather_url).await?;
-    let weather: WeatherResponse = weather_response.json().await?;
+    let weather_response = reqwest::get(&weather_url)
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Connection timeout while fetching weather data.".to_string()
+            } else if e.is_connect() {
+                "Cannot connect to weather service.".to_string()
+            } else {
+                format!("Network error: {}", e)
+            }
+        })?;
+
+    let weather: WeatherResponse = weather_response
+        .json()
+        .await
+        .map_err(|_| "Failed to parse weather data from service.".to_string())?;
 
     Ok(WeatherData { location, weather })
 }
