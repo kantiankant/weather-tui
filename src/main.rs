@@ -86,7 +86,7 @@ struct HistoryEntry {
 
 struct App {
     input: String,
-    cursor_position: usize,  // This is now a CHARACTER position, not byte position
+    cursor_position: usize,
     state: AppState,
     mode: Mode,
     weather_data: Option<WeatherData>,
@@ -120,7 +120,7 @@ impl App {
         }
     }
 
-    // Helper: convert character position to byte position
+   
     fn char_to_byte_pos(&self, char_pos: usize) -> usize {
         self.input
             .char_indices()
@@ -180,11 +180,11 @@ impl App {
         let chars: Vec<char> = self.input.chars().collect();
         let mut pos = self.cursor_position;
         
-        // Skip current word
+       
         while pos < chars.len() && !chars[pos].is_whitespace() {
             pos += 1;
         }
-        // Skip whitespace
+       
         while pos < chars.len() && chars[pos].is_whitespace() {
             pos += 1;
         }
@@ -200,11 +200,11 @@ impl App {
         let chars: Vec<char> = self.input.chars().collect();
         let mut pos = self.cursor_position.saturating_sub(1);
         
-        // Skip whitespace
+      
         while pos > 0 && chars[pos].is_whitespace() {
             pos -= 1;
         }
-        // Skip to start of word
+      
         while pos > 0 && !chars[pos - 1].is_whitespace() {
             pos -= 1;
         }
@@ -268,7 +268,7 @@ impl App {
     fn add_to_history(&mut self, query: String) {
         use std::time::{SystemTime, UNIX_EPOCH};
         
-        // Don't add duplicates
+     
         if let Some(pos) = self.search_history.iter().position(|e| e.query == query) {
             self.search_history.remove(pos);
         }
@@ -280,7 +280,7 @@ impl App {
         
         self.search_history.insert(0, HistoryEntry { query, timestamp });
         
-        // Keep only last 50
+      
         if self.search_history.len() > 50 {
             self.search_history.truncate(50);
         }
